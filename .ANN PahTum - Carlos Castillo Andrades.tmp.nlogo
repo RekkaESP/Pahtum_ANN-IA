@@ -226,7 +226,7 @@ to load [f]
    ; Read dataset
   let data DF:load f
   ; Classes to be classified
-  let classes DF:header "Type"
+  let classes DF: "Type" data
   ; Scale input columns and binarize class column
   let atts remove "Class" (DF:header data)
   foreach atts [
