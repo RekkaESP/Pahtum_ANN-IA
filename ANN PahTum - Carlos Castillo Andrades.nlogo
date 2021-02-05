@@ -1,4 +1,14 @@
 __includes ["MCTS.nls" "ANN2.nls" "DF.nls"]
+extensions[CSV]
+
+globals [
+  data-train    ; List of pairs [Input Output] to train the network
+  data-test
+  Xtr
+  Ytr
+  Xte
+  Yte
+]
 
 breed [pieces piece]
 
@@ -222,43 +232,116 @@ end
 ;
 ; ANN
 ;
-to load [f]
-   ; Read dataset
-  let data DF:load f
-  ; Classes to be classified
-  let classes DF:header "Type"
-  ; Scale input columns and binarize class column
-  let atts remove "Class" (DF:header data)
-  foreach atts [
-    att ->
-    set data DF:scale att 0 1 data
-    set data DF:rem-col att  data
-  ]
-  set data DF:add-calc-col "temp" [r -> cat-to-bin-v (first r) classes] data
-  set data DF:rem-col "Class" data
-
-  print DF:pp data
-
-  ; Separate Train ans Test data
-  let data_size first DF:shape data
-  let rtrain Train-Test / 100
-  let data_split DF:split rtrain data
-  set data-train DF:data first data_split
-  set data-test DF:data last data_split
-
-  ; Convert Train/Test data into matrix form
-  set Xtr matrix:from-row-list (map bl data-train)
-  set Ytr matrix:from-row-list (map last data-train)
-
-  set Xte matrix:from-row-list (map bl data-test)
-  set Yte matrix:from-row-list (map last data-test)
-end
 
 to train
   clear-all
+
   ;Load data
-  load "../PahtumWins.data"
-  ;ANN:train number-of-epochs Batch data-train Learning-rate
+  load "Pahtum_IN.data" "Pahtum_OUT.data" "PahTrain_IN.data" "PahTrain_OUT.data"
+
+  ; Taking Network Architecture from Interface
+  let Net (read-from-string Network)
+show Net
+  ; Training from randomized weights
+  let Ws (ANN:InitializeWs Net)
+  let Fit-Train (ANN:Train Batch Ws Net 0 Xtr Ytr Xte Yte Learning-rate Number-of-epochs true)
+
+  ; Reading outputs from Training
+  set Ws (item 0 Fit-Train)
+  let errtrain (item 1 Fit-Train)
+  let errtest (item 2 Fit-Train)
+  plot-learning-curve "Train" errtrain
+  plot-learning-curve "Test" errtest
+
+
+  ; Re-computing Network on Train and Test Data
+  let check-Train (ANN:ForwardProp Ws Xtr)
+  let OTrain (item 0 check-Train)
+
+  let check-Test (ANN:ForwardProp Ws Xte)
+  let Otest (item 0 check-Test)
+
+  ; Compute Train and Test errors
+  let Jtrain (ANN:ComputeError Ytr Otrain Ws 0)
+  let Jtest (ANN:ComputeError Yte Otest Ws 0)
+
+
+  ; Printing infos
+  print "Train:"
+  (foreach (matrix:to-row-list Ytr) (matrix:to-row-list Otrain) [
+    [y o] -> print (word (y = (discretize o)) "--" y "--" (discretize o)"--" o )])
+  print "Test:"
+  (foreach (matrix:to-row-list Yte) (matrix:to-row-list Otest) [
+    [y o] -> print (word (y = (discretize o)) "--" y  "--" (discretize o)"--" o )])
+  print (word "Train error:" Jtrain "\n")
+  print (word "Test error:" Jtest "\n")
+  print "---------------------------------\n"
+
+end
+
+to load [fdIN fdOUT ftIN ftOUT]
+  ; Read dataset
+  let dataIN DF:load fdIN
+  let dataOUT DF:load fdOUT
+  let trainIN DF:load ftIN
+  let trainOUT DF:load ftOUT
+
+  ;print df:pp data
+
+;  ; Classes to be classified
+;  let classes DF:col-values "class" data
+;  ; Scale input columns and binarize class column
+;  let atts remove "class" (DF:header data)
+;  foreach atts [
+;    att ->
+;    set data DF:scale att 0 1 data ; =>  "pl" -> "pl-scale"
+;    set data DF:rem-col att  data
+;  ]
+;  ;print df:pp data
+
+;  set data DF:add-calc-col "temp" [r -> cat-to-bin-v (first r) classes] data
+;  ;print df:pp data
+;  set data DF:rem-col "class" data
+;  ;print df:pp data
+
+;  ; Separate Train ans Test data
+;  print df:shape data
+;  let data_size first DF:shape data
+;  let rtrain Train-Test / 100
+;  let data_split DF:split rtrain data; => [ DF1 DF2]
+;  set data-train DF:data first data_split
+;  set data-test DF:data last data_split
+
+  ; Convert Train/Test data into matrix form
+  set Xtr matrix:from-row-list (trainIN)
+  set Ytr matrix:from-row-list (trainOUT)
+
+  set Xte matrix:from-row-list (dataIN)
+  set Yte matrix:from-row-list (dataOUT)
+end
+
+; Takes a value of a categorical field and returns a binary output
+; with length equals to the number of different values it can take
+;   v_0 -> [1 0 0 0 0 0 0 0 0 0]
+;   v_1 -> [0 1 0 0 0 0 0 0 0 0]
+;    ...
+;   v_9 -> [0 0 0 0 0 0 0 0 0 1]
+
+to-report cat-to-bin-v [v L]
+  let pos position v L
+  report replace-item pos (n-values (length L) [0]) 1
+end
+
+; Convert a continuous vector to a binary vector
+to-report discretize [x]
+  let mmax max x
+  report map [ i -> ifelse-value (i = mmax) [1][0]] x
+end
+
+to plot-learning-curve [pen cost]
+  set-current-plot "Error vs. Epochs"
+  set-current-plot-pen pen
+  foreach cost plot
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
@@ -346,7 +429,7 @@ obstacles
 obstacles
 1
 49
-11.0
+5.0
 2
 1
 NIL
@@ -375,10 +458,10 @@ item 1 get-total-points list (state-to-cols board-to-state) (state-to-rows board
 16
 
 BUTTON
-20
-266
-83
-299
+175
+362
+240
+490
 Train
 train
 NIL
@@ -390,6 +473,96 @@ NIL
 NIL
 NIL
 1
+
+INPUTBOX
+5
+255
+240
+362
+Network
+[49 56 49]
+1
+0
+String
+
+SLIDER
+5
+360
+177
+393
+Learning-rate
+Learning-rate
+0
+1
+0.1
+1.0E-2
+1
+NIL
+HORIZONTAL
+
+SLIDER
+5
+393
+177
+426
+Number-of-epochs
+Number-of-epochs
+0
+15000.0
+15000.0
+25
+1
+NIL
+HORIZONTAL
+
+SLIDER
+5
+426
+177
+459
+Batch
+Batch
+0
+100
+40.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+5
+457
+177
+490
+Train-Test
+Train-Test
+0
+100
+67.0
+1
+1
+%
+HORIZONTAL
+
+PLOT
+0
+629
+858
+819
+Error vs. Epochs
+Epochs
+Error
+0.0
+10.0
+0.0
+0.5
+true
+true
+"" ""
+PENS
+"Test" 1.0 0 -2674135 true "" ""
+"Train" 1.0 0 -16777216 true "" ""
 
 @#$#@#$#@
 ## WHAT IS IT?

@@ -1,7 +1,5 @@
 extensions [csv]
 
-extensions [csv]
-
 ;; A Dataframe Library
 ;; 
 ;; Something like:
